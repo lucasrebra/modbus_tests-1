@@ -7,52 +7,80 @@ cualquier dispositivo con esta conexión.*/
 #include <ModbusRTU.h>
 #include "BluetoothSerial.h"
 
-#define REGN 10
+#define REGN 0
 #define SLAVE_ID 1
+#define SEGUNDERO 20
+int segs=0;
+long ts;
 
 ModbusRTU mb;
 BluetoothSerial SerialBT;
 
  // Callback function to read corresponding DI
 uint16_t cbRead(TRegister* reg, uint16_t val) {
-  SerialBT.print("Read. Reg RAW#: ");
+  SerialBT.print("Registro: ");
   SerialBT.print(reg->address.address);
-  SerialBT.print(" Old: ");
+  SerialBT.print(" Viejo: ");
   SerialBT.print(reg->value);
-  SerialBT.print(" New: ");
+  SerialBT.print(" Nuevo: ");
   SerialBT.println(val);
   return val;
 }
+
+//  Callback cambio de valor
+uint16_t cbWrite(TRegister* reg, uint16_t val) {
+  Serial.print("Write. Reg RAW#: ");
+  Serial.print(reg->address.address);
+  Serial.print(" Old: ");
+  Serial.print(reg->value);
+  Serial.print(" New: ");
+  Serial.println(val);
+  return val;
+}
   
+
 
 void setup() {
 
   /*Configuramos el puerto serial Bluetoth*/
 
   SerialBT.begin("ESP32test"); //Bluetooth device name
-  Serial.println("The device started, now you can pair it with bluetooth!");
+  SerialBT.println("The device started, now you can pair it with bluetooth!");
 
   /*Congiguramos la comunicación modbus*/
 
   Serial.begin(9600, SERIAL_8N1);
-#if defined(ESP32) || defined(ESP8266)
+
   mb.begin(&Serial);
-#else
-  mb.begin(&Serial);
-  //mb.begin(&Serial, RXTX_PIN);  //or use RX/TX direction control pin
-(if required)
-  mb.setBaudrate(9600);
-#endif
+
   //mb.setBaudrate(9600); cosa que cambie
   mb.slave(SLAVE_ID);
-  mb.addHreg(REGN);
-  mb.Hreg(REGN, 100);
-  mb.onGetHreg(10,cbRead,1);
+
+  //Registros de valores fijos
+  mb.addHreg(REGN,100,10);
+
+  //Registro segundero
+  mb.addIreg(SEGUNDERO);
+
+  //mb.Hreg(REGN, 100);
+  mb.onGetHreg(REGN,cbRead,10);
+  mb.onSetHreg(REGN,cbWrite,10);
+
 }
 
 void loop() {
 
   
+  
+
+  if ( millis() > ts + 2000 ) 
+  {
+    segs++;
+    ts = millis();
+    mb.Ireg(SEGUNDERO,segs);//Escribimos en la direccion los segundos
+    SerialBT.print(mb.Ireg(20));
+  }
+
   mb.task();
 
   delay(1000);
