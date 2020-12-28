@@ -60,7 +60,7 @@ void setup() {
   mb.addHreg(REGN,100,10);
 
   //Registro segundero
-  mb.addIreg(SEGUNDERO);
+  mb.addHreg(SEGUNDERO, 0, 1);
 
   //mb.Hreg(REGN, 100);
   mb.onGetHreg(REGN,cbRead,10);
@@ -70,15 +70,12 @@ void setup() {
 
 void loop() {
 
-  
-  
-
   if ( millis() > ts + 2000 ) 
   {
     segs++;
     ts = millis();
-    mb.Ireg(SEGUNDERO,segs);//Escribimos en la direccion los segundos
-    SerialBT.print(mb.Ireg(20));
+    mb.Hreg(SEGUNDERO,segs);//Escribimos en la direccion los segundos
+    SerialBT.print(mb.Hreg(20));
   }
 
   mb.task();

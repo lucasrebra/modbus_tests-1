@@ -20,11 +20,12 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <ModbusIP_ESP8266.h>
+#include <SerialCommand.h>
 
 //Offsets de las direcciones registro en los diferentes tipos de protocolo
-const int SEGUNDERO = 40; 
+const int SEGUNDERO = 20; 
 const int FIJOS = 0;
-const int LEER_ESCRIBIR = 20;
+const int LEER_ESCRIBIR = 11;
 const int nreg=10;
 
 //ModbusIP object
@@ -34,6 +35,48 @@ ModbusIP mb;
 long ts;
 int segs = 0;
 
+
+#define START_CHAR '$'
+#define END_CHAR ';'
+#define BUFF_CMD_SIZE 20
+
+SerialCommand sCmd;
+
+int cmdVersion(char* param, uint8_t len, char* response){
+    //char fw_ver[20];
+    sprintf(response, "$ACK_VERSION;");
+    //sprintf(fw_ver, ", FW=%02d.02d.%02d;",FW_VER_MAJOR,FW_VER_MINOR, FW_VER_PATCH);
+    //strcat(response, fw_ver);
+    return strlen(response);
+}
+int cmdNack(char *param, uint8_t len, char* response){
+    sprintf(response, "$NACK;");
+    return strlen(response);
+}
+
+void SerialIO(){
+
+    char c;
+    char response[BUFF_CMD_SIZE];
+    static char cmd_buffer[BUFF_CMD_SIZE];
+    static unsigned int cmd_p = 0;
+
+    while (Serial.available()) {
+        c = char(Serial.read());
+        if(c == START_CHAR)
+        cmd_p = 0;
+        cmd_buffer[cmd_p] = c;
+        cmd_p += 1;
+        cmd_p %= BUFF_CMD_SIZE;
+        if(c == END_CHAR) {
+            cmd_buffer[cmd_p] = 0;
+            cmd_p = 0;
+            sCmd.processCommand(cmd_buffer, response);
+            Serial.println(response);
+        }
+    }  
+
+}
 
 //CALLBACKS--> Cada vez que se produzca una peticion del cliente
 
@@ -87,16 +130,21 @@ void setup() {
     mb.server();		
 
     //Configuracion de las direcciones de registro
-    mb.addIreg( SEGUNDERO );//discret input en direccion segundero
-    if (!mb.addHreg(FIJOS, 0xF0F0, nreg)) Serial.println("Error");//init registros fijos
-    if (!mb.addHreg(LEER_ESCRIBIR, 0xABCD, nreg)) Serial.println("Error");//init registros rw
+    mb.addHreg( SEGUNDERO, 0, 1 );//discret input en direccion segundero
+    if (!mb.addHreg(FIJOS, 100, nreg)) Serial.println("Error");//init registros fijos
+    if (!mb.addHreg(LEER_ESCRIBIR, 1000, nreg)) Serial.println("Error");//init registros rw
 
     //Callback leer y escribir
-    mb.onGetHreg(LEER_ESCRIBIR, cbRead, nreg); // Add callback on Coils value get
-    mb.onSetHreg(LEER_ESCRIBIR, cbWrite, nreg);
+    //mb.onGetHreg(LEER_ESCRIBIR, cbRead, nreg); // Add callback on Coils value get
+    //mb.onSetHreg(LEER_ESCRIBIR, cbWrite, nreg);
 
     //Inicializamos la variable ts para que mida ms
     ts = millis();
+
+    sCmd.addCommand("V", cmdVersion);
+    sCmd.setDefaultHandler(cmdNack);
+
+
 }
 
 
@@ -113,8 +161,9 @@ void loop() {
   {
     segs++;
     ts = millis();
-    mb.Ireg(SEGUNDERO,segs);//Escribimos en la direccion los segundos
+    mb.Hreg(SEGUNDERO,segs);//Escribimos en la direccion los segundos
   }
-
-   delay(10);
+    
+    SerialIO();
+    delay(10);
 }
