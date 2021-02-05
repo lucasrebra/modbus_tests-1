@@ -173,6 +173,21 @@ void CommDataClass(){
                 }
                 data_len=wait_for_data;
 
+                if(wait_for_data==0){
+                    //sCmd.processCommand(input_data,next_command);
+                }
+            else{
+                if(wait_for_data>0){
+                    wait_for_data--;
+                }
+                if(wait_for_data==0){
+                    //checkcrc
+                    received_bytes=0;
+                }
+
+                //sCmd.processCommand(input_data,next_command);
+            }
+
 
             }
             //incrementamos bytes recibidos para iniciar el proceso de recoleccion
