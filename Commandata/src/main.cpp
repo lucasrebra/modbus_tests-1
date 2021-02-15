@@ -145,17 +145,20 @@ int cmdVersion(char* param, uint8_t len, char* response){
 }
 
 int checkCRC() {//Se chequea el CRC
-    unsigned int sumador=0; 
+    int sumador=0; 
     unsigned int suma = 0;
     //unsigned int my_crc16;
 
     if (!crc_enabled)
         return 1;
 
-    for (int i = 2; i < received_bytes; i++)
+    for (int i = 2; i < received_bytes; i++){
         sumador= input_data_int[i];//cambiamos a int
-        suma += sumador;
-
+    
+        suma += sumador;}
+        
+    Serial.println(mycrc16);
+    Serial.println(suma);
     return (mycrc16 == suma);
 }
 
@@ -211,11 +214,13 @@ void CommDataClass(){
                 data_len=wait_for_data;
 
                 if(wait_for_data==0){
-                    received_bytes=0;
+                    
                     Serial.printf("El num de argumentos es 0\n");
                     if(checkCRC()){
+                        received_bytes=0;
                         sCmd.processCommand(next_command,response);}
                     else{
+                        received_bytes=0;
                         Serial.println("El chechcrc no es valido");
                     }
                 }
@@ -228,11 +233,13 @@ void CommDataClass(){
                     Serial.printf("Wait for data:  %d\n", wait_for_data);
                 }
                 if(wait_for_data==0){
-                    received_bytes=0;
+                    
                     if(checkCRC()){
+                        received_bytes=0;
                         sCmd.processCommand(next_command,response);
                         Serial.printf("PROCESADO\n");}
                     else{
+                        received_bytes=0;
                         Serial.println("El chechcrc no es valido");
                     }
                 }
