@@ -121,10 +121,11 @@ static char END_CHAR='\n';
 unsigned int input_data_int[100];
 static char input_data_char[100];
 unsigned int received_bytes=0;
-unsigned int mycrc16;
+unsigned int mycrc16=0;
 static char next_command[10];
 unsigned int wait_for_data=0;
 unsigned int MAX= 64;
+int crc_enabled=1;
 
 
 SerialCommand sCmd;//objeto para comandos serial
@@ -143,6 +144,20 @@ int cmdVersion(char* param, uint8_t len, char* response){
     return strlen(response);
 }
 
+int checkCRC() {//Se chequea el CRC
+    unsigned int sumador=0; 
+    unsigned int suma = 0;
+    //unsigned int my_crc16;
+
+    if (!crc_enabled)
+        return 1;
+
+    for (int i = 2; i < received_bytes; i++)
+        sumador= input_data_int[i];//cambiamos a int
+        suma += sumador;
+
+    return (mycrc16 == suma);
+}
 
 
 void CommDataClass(){
@@ -196,8 +211,13 @@ void CommDataClass(){
                 data_len=wait_for_data;
 
                 if(wait_for_data==0){
+                    received_bytes=0;
                     Serial.printf("El num de argumentos es 0\n");
-                    sCmd.processCommand(next_command,response);
+                    if(checkCRC()){
+                        sCmd.processCommand(next_command,response);}
+                    else{
+                        Serial.println("El chechcrc no es valido");
+                    }
                 }
             }
 
@@ -208,10 +228,13 @@ void CommDataClass(){
                     Serial.printf("Wait for data:  %d\n", wait_for_data);
                 }
                 if(wait_for_data==0){
-                    //checkcrc
                     received_bytes=0;
-                    sCmd.processCommand(next_command,response);
-                    Serial.printf("PROCESADO\n");
+                    if(checkCRC()){
+                        sCmd.processCommand(next_command,response);
+                        Serial.printf("PROCESADO\n");}
+                    else{
+                        Serial.println("El chechcrc no es valido");
+                    }
                 }
                 
                 
