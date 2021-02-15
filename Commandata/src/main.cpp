@@ -122,9 +122,28 @@ unsigned int input_data_int[100];
 static char input_data_char[100];
 unsigned int received_bytes=0;
 unsigned int mycrc16;
-unsigned int next_command;
+static char next_command[10];
 unsigned int wait_for_data=0;
 unsigned int MAX= 64;
+
+
+SerialCommand sCmd;//objeto para comandos serial
+
+int cmdNack(char *param, uint8_t len, char*response){
+    Serial.println("Comando no aceptado");
+    return strlen(response);
+}
+
+int cmdVersion(char* param, uint8_t len, char* response){
+    //char fw_ver[20];
+    sprintf(response, "$ACK_VERSION;");
+    Serial.printf("Hola soy ESP32");
+    //sprintf(fw_ver, ", FW=%02d.02d.%02d;",FW_VER_MAJOR,FW_VER_MINOR, FW_VER_PATCH);
+    //strcat(response, fw_ver);
+    return strlen(response);
+}
+
+
 
 void CommDataClass(){
     /*defino variables*/
@@ -149,7 +168,7 @@ void CommDataClass(){
             int inputData=(int)strtol(cmd_buffer,NULL,0);//transformamos a entero
             Serial.println(inputData);
             input_data_int[received_bytes]=inputData;//Guardamos en nuestro buffer de enteros
-            Serial.println(input_data_int[received_bytes]=inputData);
+            Serial.println(input_data_int[received_bytes]);
             //sprintf(&input_data_char[received_bytes],"%x",input_data_int[received_bytes]);//Guardamos en formato hexadecimal char
             Serial.printf("%x",input_data_char[received_bytes]);
             Serial.println(received_bytes);
@@ -162,7 +181,10 @@ void CommDataClass(){
                 mycrc16 += inputData;     //Segunda parte de crc(HEX)
             }
             else if(received_bytes==3){
-                next_command = inputData; //numero comando
+                //next_command="$0x01;"; //Esta puesto para que tenga caracter inicial y final
+                sprintf(next_command,"$0x%02X;",inputData);
+                Serial.println(next_command);
+                //Serial.printf("next command received bytes: %02x",next_command);
             }
             else if(received_bytes==4){
                 wait_for_data = inputData;//numero de argumentos que vamos a tener
@@ -174,22 +196,28 @@ void CommDataClass(){
                 data_len=wait_for_data;
 
                 if(wait_for_data==0){
-                    //sCmd.processCommand(input_data,next_command);
+                    Serial.printf("El num de argumentos es 0\n");
+                    sCmd.processCommand(next_command,response);
                 }
-            else{
+            }
+
+            else if(received_bytes>=5){
+                Serial.println("Llegamos a 5");
                 if(wait_for_data>0){
                     wait_for_data--;
+                    Serial.printf("Wait for data:  %d\n", wait_for_data);
                 }
                 if(wait_for_data==0){
                     //checkcrc
                     received_bytes=0;
+                    sCmd.processCommand(next_command,response);
+                    Serial.printf("PROCESADO\n");
                 }
-
-                //sCmd.processCommand(input_data,next_command);
+                
+                
             }
 
 
-            }
             //incrementamos bytes recibidos para iniciar el proceso de recoleccion
             //eliminating the end and the start_char
             //Serial.println(response);
@@ -202,51 +230,26 @@ void CommDataClass(){
 
 
 
-
-   
-
 }
-/*
-SerialCommand sCmd;
-void SerialIO(){
 
-    char c;
-    char response[100];
-    static char cmd_buffer[100];
-    static unsigned int cmd_p = 0;
-
-    while (Serial.available()) {
-        c = char(Serial.read());
-        if(c == START_CHAR)
-          cmd_p = 0;
-          cmd_buffer[cmd_p] = c;
-          cmd_p += 1;
-          cmd_p %= (data_len+16);//This is for discharging the buffer
-
-      
-        if(c == END_CHAR) {
-            cmd_buffer[cmd_p] = 0;
-            cmd_p = 0;
-            sCmd.processCommand(cmd_buffer,response);//converts the string in the command
-            //eliminating the end and the start_char
-            Serial.println(response);
-        }
-    }  
-}*/
 
 void setup() {
   Serial.begin(115200);
+
+  sCmd.addCommand("0x01",cmdVersion);
+  sCmd.setDefaultHandler(cmdNack);
   // put your setup code here, to run once:
 }
 
 void loop() {
   CommDataClass();
   Serial.println("VARIABLES OBTENIDAS");
-  Serial.println(mycrc16);
+
+  Serial.printf("mycrc16: %d\n",mycrc16);
   Serial.println(next_command);
-  Serial.println(wait_for_data);
+  Serial.printf("wait_for_data: %d\n", wait_for_data);
   
   //SerialIO();
   // put your main code here, to run repeatedly:
-  delay(1000);
+  delay(5000);
 }
