@@ -1,6 +1,9 @@
 #include <Arduino.h>
 #include <SerialCommand.h>
+#include <BluetoothSerial.h>
 
+
+#define ONBOARD_LED  2
 
 
 /*
@@ -123,12 +126,16 @@ static char input_data_char[100];
 unsigned int received_bytes=0;
 unsigned int mycrc16=0;
 static char next_command[10];
+String next_command_string;
 unsigned int wait_for_data=0;
 unsigned int MAX= 64;
 int crc_enabled=1;
 
 
 SerialCommand sCmd;//objeto para comandos serial
+BluetoothSerial SerialBT;
+
+
 
 int cmdNack(char *param, uint8_t len, char*response){
     Serial.println("Comando no aceptado");
@@ -139,6 +146,12 @@ int cmdVersion(char* param, uint8_t len, char* response){
     //char fw_ver[20];
     sprintf(response, "$ACK_VERSION;");
     Serial.printf("Hola soy ESP32");
+
+    delay(1000);
+    digitalWrite(ONBOARD_LED,HIGH);
+    delay(10000);
+    digitalWrite(ONBOARD_LED,LOW);
+
     //sprintf(fw_ver, ", FW=%02d.02d.%02d;",FW_VER_MAJOR,FW_VER_MINOR, FW_VER_PATCH);
     //strcat(response, fw_ver);
     return strlen(response);
@@ -177,7 +190,7 @@ void CommDataClass(){
         c = char(Serial.read());//Vamos leyendo caracteres
         cmd_buffer[cmd_p] = c;
         cmd_p += 1;
-        cmd_p %= (datalen+16); //This is for discharging the buffer
+        cmd_p %= 100;//This is for discharging the buffer
         
       
         if(c == END_CHAR) {
@@ -195,13 +208,20 @@ void CommDataClass(){
             if(received_bytes==1){
                 mycrc16 = inputData << 8; //primera parte de crc(HEX)
             }
+
             else if(received_bytes==2){
                 mycrc16 += inputData;     //Segunda parte de crc(HEX)
             }
+            
             else if(received_bytes==3){
-                //next_command="$0x01;"; //Esta puesto para que tenga caracter inicial y final
+                //next_command="$hola;"; //Esta puesto para que tenga caracter inicial y final
                 sprintf(next_command,"$0x%02X;",inputData);
-                Serial.println(next_command);
+                Serial.println("EL comando que envio");
+                Serial.println(next_command[0]);
+                Serial.println(next_command[1]);
+                Serial.println(next_command[2]);
+                Serial.println(next_command[3]);
+                Serial.println(next_command[4]);
                 //Serial.printf("next command received bytes: %02x",next_command);
             }
             else if(received_bytes==4){
@@ -218,6 +238,7 @@ void CommDataClass(){
                     Serial.printf("El num de argumentos es 0\n");
                     if(checkCRC()){
                         received_bytes=0;
+                        Serial.println(next_command);
                         sCmd.processCommand(next_command,response);}
                     else{
                         received_bytes=0;
@@ -236,6 +257,7 @@ void CommDataClass(){
                     
                     if(checkCRC()){
                         received_bytes=0;
+
                         sCmd.processCommand(next_command,response);
                         Serial.printf("PROCESADO\n");}
                     else{
@@ -246,7 +268,6 @@ void CommDataClass(){
                 
                 
             }
-
 
             //incrementamos bytes recibidos para iniciar el proceso de recoleccion
             //eliminating the end and the start_char
@@ -265,21 +286,29 @@ void CommDataClass(){
 
 void setup() {
   Serial.begin(115200);
+  SerialBT.begin("ESP32test"); //Bluetooth device name
+  pinMode(ONBOARD_LED,OUTPUT);
 
-  sCmd.addCommand("0x01",cmdVersion);
+  sCmd.addCommand("01",cmdVersion);
+  sCmd.addCommand("2",cmdNack);
+
   sCmd.setDefaultHandler(cmdNack);
   // put your setup code here, to run once:
 }
 
 void loop() {
   CommDataClass();
-  Serial.println("VARIABLES OBTENIDAS");
+  SerialBT.println("VARIABLES OBTENIDAS");
 
+  SerialBT.printf("mycrc16: %d\n",mycrc16);
+  SerialBT.println(next_command);
+  SerialBT.printf("wait_for_data: %d\n", wait_for_data);
+  
   Serial.printf("mycrc16: %d\n",mycrc16);
   Serial.println(next_command);
   Serial.printf("wait_for_data: %d\n", wait_for_data);
-  
   //SerialIO();
   // put your main code here, to run repeatedly:
   delay(5000);
 }
+
