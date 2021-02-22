@@ -122,6 +122,7 @@ unsigned int datalen=100;
 unsigned int data_len=0;
 static char END_CHAR='\n';
 unsigned int input_data_int[100];
+byte  input_data_def[100];
 static char input_data_char[100];
 unsigned int received_bytes=0;
 unsigned int mycrc16=0;
@@ -130,7 +131,7 @@ String next_command_string;
 unsigned int wait_for_data=0;
 unsigned int MAX= 64;
 int crc_enabled=1;
-
+int ON=0;
 
 SerialCommand sCmd;//objeto para comandos serial
 BluetoothSerial SerialBT;
@@ -175,10 +176,11 @@ int checkCRC() {//Se chequea el CRC
     return (mycrc16 == suma);
 }
 
+//Programa que va a leer el serial e ir introduciendolo en variable
+//global input_data_int[] ---> Valores en crudo
+void ReadSerial(){
 
-void CommDataClass(){
     /*defino variables*/
-
     char c;
     static char cmd_buffer[100];    //Aquí guardaremos nuestro cmd serial
     unsigned int cmd_p=0;           //Contador pointer
@@ -204,84 +206,235 @@ void CommDataClass(){
             Serial.printf("%x",input_data_char[received_bytes]);
             Serial.println(received_bytes);
             received_bytes++;
-
-            if(received_bytes==1){
-                mycrc16 = inputData << 8; //primera parte de crc(HEX)
-            }
-
-            else if(received_bytes==2){
-                mycrc16 += inputData;     //Segunda parte de crc(HEX)
-            }
-            
-            else if(received_bytes==3){
-                //next_command="$hola;"; //Esta puesto para que tenga caracter inicial y final
-                sprintf(next_command,"$0x%02X;",inputData);
-                Serial.println("EL comando que envio");
-                Serial.println(next_command[0]);
-                Serial.println(next_command[1]);
-                Serial.println(next_command[2]);
-                Serial.println(next_command[3]);
-                Serial.println(next_command[4]);
-                //Serial.printf("next command received bytes: %02x",next_command);
-            }
-            else if(received_bytes==4){
-                wait_for_data = inputData;//numero de argumentos que vamos a tener
-
-                //ifs en caso de que no se ajuste bien a lo requerido
-                if(wait_for_data > MAX){
-                    wait_for_data=0;
-                }
-                data_len=wait_for_data;
-
-                if(wait_for_data==0){
-                    
-                    Serial.printf("El num de argumentos es 0\n");
-                    if(checkCRC()){
-                        received_bytes=0;
-                        Serial.println(next_command);
-                        sCmd.processCommand(next_command,response);}
-                    else{
-                        received_bytes=0;
-                        Serial.println("El chechcrc no es valido");
-                    }
-                }
-            }
-
-            else if(received_bytes>=5){
-                Serial.println("Llegamos a 5");
-                if(wait_for_data>0){
-                    wait_for_data--;
-                    Serial.printf("Wait for data:  %d\n", wait_for_data);
-                }
-                if(wait_for_data==0){
-                    
-                    if(checkCRC()){
-                        received_bytes=0;
-
-                        sCmd.processCommand(next_command,response);
-                        Serial.printf("PROCESADO\n");}
-                    else{
-                        received_bytes=0;
-                        Serial.println("El chechcrc no es valido");
-                    }
-                }
-                
-                
-            }
-
-            //incrementamos bytes recibidos para iniciar el proceso de recoleccion
-            //eliminating the end and the start_char
-            //Serial.println(response);
         }
+    }
+}
 
-    
+void converseCommand(int* input){
 
+    int escaped=0;
+    byte a;
+
+
+    for (int i=0; i< received_bytes; i++) {
+        a=input_data_int[i];
+        if ((a == 0x7D) || (a == 0x7E)) {
+            escaped++;  // add escaped bytes to the packet length
+        }        
+    }
+    int size=received_bytes+escaped;
+
+
+    for (int i=0; i< size; i++) {
+        a=byte(input_data_int[i]);
+        input_data_def[i]=a;
+        if ((a == 0x7D) || (a == 0x7E)) {  // add escaped bytes to the packet length
+            i++;
+            input_data_def[i]= a^0x20;
+        }   
+    }
+
+    Serial.write(0x7E);
+
+    for (int i=0; i<size;i++){
+
+        Serial.printf("0x%02x ",input_data_def[i]);
+
+    }
+    Serial.println();
+
+}
+
+/*
+void sendCommand(byte* response, int size) {
+    byte a;
+
+    for (byte i = 0; i < size; i++) {
+        a = response[i];
+        if ((a == 0x7D) || (a == 0x7E)) {
+            response[3]++;  // add escaped bytes to the packet length
+        }
     }
 
 
+    Serial.write(0x7E);
 
+    for (byte i = 0; i < size; i++) {
+        a = response[i];
+        if ((a == 0x7D) || (a == 0x7E)) {
+            Serial.write(0x7D);
+            Serial.write(a ^ 0x20);
+        } else {
+            Serial.write(a);
+        }
+    }
+}*/
+
+/*
+
+
+ESTUDIAR COMANDOS PARA APLICACION
+
+void ProcessSPICommunications(CommandHandler* cmd){
+    char cmd_buffer[BUFF_CMD_SIZE];
+    unsigned int len=0;
+    static char nextcommand[BUFF_CMD_SIZE];
+    static BYTE pos = 0;
+    char response[40];
+    BYTE lenr; 
+    BYTE i=0;
+    BYTE c;
+
+    if(SpiSlaveAvailable(&SPI2_drv)) {
+        len = SpiSlaveGets(&SPI2_drv, cmd_buffer);
+        while(i<len){
+            c = cmd_buffer[i];
+            c &= 0xFF;
+            if(c == 0x7D){
+                nextcommand[pos] = cmd_buffer[i+1]^0x20;
+                i++;
+            }
+            else{
+                nextcommand[pos] = c;
+            }
+            if(pos<BUFF_CMD_SIZE)
+                pos++;
+            if(c == cmd->end_char){
+                //sprintf(response, "frame(%d) = %d\r\n", pos, check_frame(nextcommand, pos));
+                //SerialPuts(&USBSerial, response);
+                lenr = processCommand(cmd, nextcommand, response);
+                //SerialNPuts(&USBSerial, response, lenr);
+                //SpiSlaveNPuts(&SPI2_drv, response, lenr);
+                pos = 0;
+            }
+            i++;
+        }    
+    }
+
+inline BYTE spi_interrupt_hdr(BYTE c){
+    static BYTE scmd, slen, svalue = 0;
+    static int count = 0;
+    static BOOL escaped = 0;
+    BYTE value;
+    BYTE resp = c;
+    
+    if(!escaped)
+        value = c;
+    else
+        value = c^0x20;
+        
+    if(count == 2){
+        scmd = value;
+    }
+    else if(count == 3){
+        slen = value;
+    }
+    else if(count == 4){
+        svalue = value;
+        if(scmd == CMDREADPIN)
+            resp = digitalRead(svalue);
+    }
+    
+    if(c != 0x7D){
+        count ++;
+        escaped = 0;
+    }else{ 
+        escaped = 1;
+    }
+    
+    if(c==0x7E)
+        count = 0;
+    
+    return resp;
+}
+        
+}*/
+
+
+void CommDataClass(){
+    /*defino variables*/
+
+    char c;
+    static char cmd_buffer[100];    //Aquí guardaremos nuestro cmd serial
+    unsigned int cmd_p=0;           //Contador pointer
+    char response[100];             //Respuesta command handler
+    
+    /*Programa con el que recogeremos comandos para formar info*/
+    for(int i=0;i<received_bytes;i++){
+        int inputData=input_data_int[i];
+
+        if(received_bytes==1 ){
+            mycrc16 = inputData << 8; //primera parte de crc(HEX)
+        }
+
+        else if(received_bytes==2 ){
+            mycrc16 += inputData;     //Segunda parte de crc(HEX)
+        }
+        
+        else if(received_bytes==3){
+            //next_command="$hola;"; //Esta puesto para que tenga caracter inicial y final
+            sprintf(next_command,"$%d;",inputData);
+            Serial.println("EL comando que envio");
+            Serial.println(next_command[0]);
+            Serial.println(next_command[1]);
+            Serial.println(next_command[2]);
+            Serial.println(next_command[3]);
+            Serial.println(next_command[4]);
+            //Serial.printf("next command received bytes: %02x",next_command);
+        }
+        else if(received_bytes==4){
+            wait_for_data = inputData;//numero de argumentos que vamos a tener
+
+            //ifs en caso de que no se ajuste bien a lo requerido
+            if(wait_for_data > MAX){
+                wait_for_data=0;
+            }
+            data_len=wait_for_data;
+
+            if(wait_for_data==0){
+                
+                Serial.printf("El num de argumentos es 0\n");
+                if(checkCRC()){
+                    received_bytes=0;
+                    Serial.println(next_command);
+                    sCmd.processCommand(next_command,response);}
+                else{
+                    received_bytes=0;
+                    Serial.println("El chechcrc no es valido");
+                }
+            }
+        }
+
+        else if(received_bytes>=5){
+            Serial.println("Llegamos a 5");
+            if(wait_for_data>0){
+                wait_for_data--;
+                Serial.printf("Wait for data:  %d\n", wait_for_data);
+            }
+            if(wait_for_data==0){
+                
+                if(checkCRC()){
+                    received_bytes=0;
+
+                    sCmd.processCommand(next_command,response);
+                    Serial.printf("PROCESADO\n");}
+                else{
+                    received_bytes=0;
+                    Serial.println("El chechcrc no es valido");
+                }
+            }
+            
+            
+        }
+        //incrementamos bytes recibidos para iniciar el proceso de recoleccion
+        //eliminating the end and the start_char
+        //Serial.println(response);
+    }
 
 }
+
+
+
 
 
 void setup() {
@@ -289,7 +442,7 @@ void setup() {
   SerialBT.begin("ESP32test"); //Bluetooth device name
   pinMode(ONBOARD_LED,OUTPUT);
 
-  sCmd.addCommand("01",cmdVersion);
+  sCmd.addCommand("1",cmdVersion);
   sCmd.addCommand("2",cmdNack);
 
   sCmd.setDefaultHandler(cmdNack);
@@ -297,6 +450,8 @@ void setup() {
 }
 
 void loop() {
+  ReadSerial();
+  converseCommand((int*)input_data_int);
   CommDataClass();
   SerialBT.println("VARIABLES OBTENIDAS");
 
