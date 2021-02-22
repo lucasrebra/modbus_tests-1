@@ -1,0 +1,286 @@
+
+int cmdNack(char *param, int len, char* resp){
+    sprintf(resp,"NOT FOUND\r\n");  
+    return strlen(resp);
+}
+
+
+void InitUSBCommunications(CommandHandler* cmd){
+    CommandHandlerConstructor(cmd);
+    cmd->name = "USB CDC handler";
+    setDefaultHandler(cmd, cmdNack);
+}
+
+void ProcessUSBCommunications(CommandHandler* cmd){
+    char cmd_buffer[BUFF_CMD_SIZE];
+    unsigned int len=0;
+    static BYTE nextcommand[BUFF_CMD_SIZE];
+    static BYTE pos = 0;
+    char response[20];
+    BYTE lenr; 
+    BYTE i=0;
+    
+    ProcessUSB();
+    if(SerialAvailable(&USBSerial)) {
+        len = SerialGets(&USBSerial, cmd_buffer);
+        SerialNPuts(&Serial1, cmd_buffer, len);
+        //processCommand(cmd, cmd_buffer, response);
+        /*for(i=0;i<len;i++){
+            nextcommand[pos] = cmd_buffer[i];
+            if(pos<BUFF_CMD_SIZE)
+                pos++;
+            if(cmd_buffer[i]==cmd->end_char){
+                lenr = processCommand(cmd, nextcommand, response);
+                SerialNPuts(&USBSerial, response, lenr);
+                pos = 0;
+            }
+        }*/
+    }
+}
+
+
+/** **************************************************************************************
+ * \section UART 
+ * UART communications funtions
+ */
+
+void ProcessUARTCommunications(CommandHandler* cmd){
+    char cmd_buffer[BUFF_CMD_SIZE];
+    unsigned int len=0;
+    if(SerialAvailable(&Serial1)) {
+        len = SerialGets(&Serial1, cmd_buffer);
+        SerialNPuts(&USBSerial, cmd_buffer, len);
+    }
+}
+
+
+/** **************************************************************************************
+ * \section SPI 
+ * SPI communications funtions
+ */
+
+int cmdSpiDefault(char *param, int len, char* resp){
+    sprintf(resp,"SPI command unknown\r\n");
+    return strlen(resp);
+}
+
+int cmdSpiTest(char *param, int len, char* resp){
+    int i;
+    char text[20];
+    for(i=0;i<len;i++){
+        sprintf(text,"%d ", param[i]);
+        usb_puts(text);
+    }
+    sprintf(text,"=%d chars\r\n", len);
+        usb_puts(text);
+    sprintf(resp,"SPIresp");
+    return strlen(resp);
+}
+
+int cmdSpiUsbText(char *param, int len, char* resp){
+    int textlen = param[0]; 
+    usb_nputs(param+1,textlen);
+    resp = param+1;
+
+    return strlen(textlen);
+}
+
+int cmdSpiGotoxy(char *param, int len, char* resp){
+    int x, y;
+
+    x = MAKEWORD(param[1],param[2]);
+    y = MAKEWORD(param[3],param[4]);
+    GLCDGotoXY(&stat410.lcd, x, y);
+
+    return len;
+}
+
+int cmdSpiLcdText(char *param, int len, char* resp){
+    int textlen = param[0];
+    param[len]=0;
+    GLCDPuts(&stat410.lcd, param+1);
+    return strlen(textlen);
+}
+
+int cmdSpiLcdRect(char *param, int len, char* resp){
+    int x, y;
+    x = MAKEWORD(param[1],param[2]);
+    y = MAKEWORD(param[3],param[4]);
+    PutRectangle(&stat410.lcd, x, y);
+    return len;
+}
+
+int cmdSpiLcdColor(char *param, int len, char* resp){
+    int r,g,b;
+    
+    r = *(param+1);
+    g = *(param+2);
+    b = *(param+3);
+    SetColor(&stat410.lcd, RGBColor(r,g,b));
+    return len;
+}
+
+int cmdSpiSetPin(char *param, int len, char* resp){
+    uint8_t pin,value;
+    
+    pin = *(param+1);
+    value = *(param+2);
+    digitalWrite(pin, value);
+
+    return len;
+}
+
+int cmdSpiPinMode(char *param, int len, char* resp){
+    uint8_t pin,mode;
+    
+    pin = *(param+1);
+    mode = *(param+2);
+    pinMode(pin, mode);
+
+    return len;
+}
+
+int cmdSpiReadPin(char *param, int len, char* resp){
+    char text[20];
+    uint8_t pin,value;
+    int i;
+    
+    pin = *(param+1);
+    value = digitalRead(pin);
+    sprintf(text,"SPI read pin %d=%d\r\n",pin,value);
+    //usb_puts(text);
+    
+    return len;
+}
+
+
+void InitSPICommunications(CommandHandler* cmd){
+    
+    SPI2_drv.ops.interrupt_handler = spi_interrupt_hdr;
+    
+    char hdr[] = {10}; 
+    CommandHandlerConstructor(cmd);
+    cmd->end_char = 0x7E;
+    cmd->hdr_size = 2;
+    cmd->name = "SPIhnd";
+    
+    addCommand(cmd, hdr, cmdSpiTest);
+    *hdr = CMDLCDGOTOXY;
+    addCommand(cmd, hdr, cmdSpiGotoxy);
+    *hdr = CMDUSBTEXT;
+    addCommand(cmd, hdr, cmdSpiUsbText);
+    *hdr = CMDLCDTEXT;
+    addCommand(cmd, hdr, cmdSpiLcdText);
+    *hdr = CMDLCDRECT;
+    addCommand(cmd, hdr, cmdSpiLcdRect);
+    *hdr = CMDLCDCOLOR;
+    addCommand(cmd, hdr, cmdSpiLcdColor);
+    *hdr = CMDSETPIN;
+    addCommand(cmd, hdr, cmdSpiSetPin);
+    *hdr = CMDREADPIN;
+    addCommand(cmd, hdr, cmdSpiReadPin);
+    *hdr = CMDPINMODE;
+    addCommand(cmd, hdr, cmdSpiPinMode);
+    
+    setDefaultHandler(cmd, cmdSpiDefault);
+}
+
+/**
+ * Constructor makes sure some things are set.
+ */
+void ProcessSPICommunications(CommandHandler* cmd){
+    char cmd_buffer[BUFF_CMD_SIZE];
+    unsigned int len=0;
+    static char nextcommand[BUFF_CMD_SIZE];
+    static BYTE pos = 0;
+    char response[40];
+    BYTE lenr; 
+    BYTE i=0;
+    BYTE c;
+
+    if(SpiSlaveAvailable(&SPI2_drv)) {
+        len = SpiSlaveGets(&SPI2_drv, cmd_buffer);
+        while(i<len){
+            c = cmd_buffer[i];
+            c &= 0xFF;
+            if(c == 0x7D){
+                nextcommand[pos] = cmd_buffer[i+1]^0x20;
+                i++;
+            }
+            else{
+                nextcommand[pos] = c;
+            }
+            if(pos<BUFF_CMD_SIZE)
+                pos++;
+            if(c == cmd->end_char){
+                //sprintf(response, "frame(%d) = %d\r\n", pos, check_frame(nextcommand, pos));
+                //SerialPuts(&USBSerial, response);
+                lenr = processCommand(cmd, nextcommand, response);
+                //SerialNPuts(&USBSerial, response, lenr);
+                //SpiSlaveNPuts(&SPI2_drv, response, lenr);
+                pos = 0;
+            }
+            i++;
+        }    
+    }
+        
+}
+
+int check_frame(char *cmd, int len){
+    BYTE cmd_len, cmd_com;
+    WORD cmd_crc;
+    WORD crc16 = 0;
+    char text[BUFF_CMD_SIZE];
+    int i=0;
+
+    cmd_crc = cmd[0]<<8;
+    cmd_crc &= 0xFF00;
+    cmd_crc |= cmd[1]&0xFF;
+    
+    cmd_com = cmd[2];
+    cmd_len = cmd[3];
+    crc16 = cmd_com;
+    crc16+= cmd_len;
+    for(i=0;i<cmd_len;i++)
+        crc16+= cmd[4+i];
+
+    return (crc16==cmd_crc)? 0: 1;
+}
+
+
+inline BYTE spi_interrupt_hdr(BYTE c){
+    static BYTE scmd, slen, svalue = 0;
+    static int count = 0;
+    static BOOL escaped = 0;
+    BYTE value;
+    BYTE resp = c;
+    
+    if(!escaped)
+        value = c;
+    else
+        value = c^0x20;
+        
+    if(count == 2){
+        scmd = value;
+    }
+    else if(count == 3){
+        slen = value;
+    }
+    else if(count == 4){
+        svalue = value;
+        if(scmd == CMDREADPIN)
+            resp = digitalRead(svalue);
+    }
+    
+    if(c != 0x7D){
+        count ++;
+        escaped = 0;
+    }else{ 
+        escaped = 1;
+    }
+    
+    if(c==0x7E)
+        count = 0;
+    
+    return resp;
+}
